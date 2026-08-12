@@ -22,7 +22,7 @@ export default function AddExpenseScreen({ route, navigation }) {
     date: new Date().getDate(),
   };
 
-  const { addExpense, theme, currency, allCategories } = useContext(AppContext);
+  const { addExpense, theme, currency, allCategories, accounts } = useContext(AppContext);
   const colors = COLORS[theme];
   const styles = getStyles(theme);
 
@@ -36,7 +36,7 @@ export default function AddExpenseScreen({ route, navigation }) {
 
   // New Feature States
   const [selectedTag, setSelectedTag] = useState('');
-  const [selectedAccount, setSelectedAccount] = useState('acc-cash');
+  const [selectedAccount, setSelectedAccount] = useState('acc-bank');
   const [receiptNote, setReceiptNote] = useState('');
 
   const PRESET_TAGS = ['#vacation', '#work', '#diningout', '#shopping', '#party', '#health'];
@@ -269,10 +269,47 @@ export default function AddExpenseScreen({ route, navigation }) {
                     styles.pill,
                     isSelected && styles.pillSelected,
                   ]}
-                  onPress={() => setPaymentMethod(method)}
+                  onPress={() => {
+                    setPaymentMethod(method);
+                    const pm = method.toLowerCase();
+                    if (pm.includes('credit')) setSelectedAccount('acc-card');
+                    else if (pm.includes('bank') || pm.includes('upi') || pm.includes('debit')) setSelectedAccount('acc-bank');
+                    else setSelectedAccount('acc-cash');
+                  }}
                 >
                   <Text style={[styles.pillText, isSelected && styles.pillTextSelected]}>
                     {method}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+
+        {/* Deduct From Account Selector */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Deduct Money From (Account) *</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
+            {accounts.map((acc) => {
+              const isSelected = selectedAccount === acc.id;
+              return (
+                <Pressable
+                  key={acc.id}
+                  style={[
+                    styles.pill,
+                    isSelected && styles.pillSelected,
+                    { flexDirection: 'row', alignItems: 'center' }
+                  ]}
+                  onPress={() => setSelectedAccount(acc.id)}
+                >
+                  <Ionicons 
+                    name={acc.type === 'Cash' ? 'cash-outline' : acc.type === 'Bank' ? 'business-outline' : 'card-outline'} 
+                    size={14} 
+                    color={isSelected ? '#fff' : colors.text} 
+                    style={{ marginRight: 5 }}
+                  />
+                  <Text style={[styles.pillText, isSelected && styles.pillTextSelected]}>
+                    {acc.name} ({formatCurrency(acc.balance, currency)})
                   </Text>
                 </Pressable>
               );

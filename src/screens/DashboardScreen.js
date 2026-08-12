@@ -19,7 +19,7 @@ import { formatCurrency } from '../services/format';
 const { width } = Dimensions.get('window');
 
 export default function DashboardScreen({ navigation }) {
-  const { expenses, monthlyBudget, updateBudget, theme, currency, allCategories, accounts } = useContext(AppContext);
+  const { expenses, monthlyBudget, updateBudget, theme, currency, allCategories, accounts, updateAccountBalance } = useContext(AppContext);
   const colors = COLORS[theme];
   const styles = getStyles(theme);
 
@@ -27,6 +27,12 @@ export default function DashboardScreen({ navigation }) {
   const [budgetModalVisible, setBudgetModalVisible] = useState(false);
   const [newBudgetInput, setNewBudgetInput] = useState('');
   const [budgetError, setBudgetError] = useState('');
+
+  // Modal account balance editing states
+  const [accountModalVisible, setAccountModalVisible] = useState(false);
+  const [selectedAccountToEdit, setSelectedAccountToEdit] = useState(null);
+  const [newAccountBalanceInput, setNewAccountBalanceInput] = useState('');
+  const [accountBalanceError, setAccountBalanceError] = useState('');
 
   // Handle budget edit submit
   const handleUpdateBudgetSubmit = async () => {
@@ -47,6 +53,37 @@ export default function DashboardScreen({ navigation }) {
       setBudgetModalVisible(false);
     } else {
       setBudgetError(result.error);
+    }
+  };
+
+  // Open account balance edit modal
+  const handleOpenAccountEdit = (acc) => {
+    setSelectedAccountToEdit(acc);
+    setNewAccountBalanceInput(acc.balance.toString());
+    setAccountBalanceError('');
+    setAccountModalVisible(true);
+  };
+
+  // Handle account balance submit
+  const handleUpdateAccountBalanceSubmit = async () => {
+    setAccountBalanceError('');
+    const trimmedInput = newAccountBalanceInput.trim();
+    if (!trimmedInput && trimmedInput !== '0') {
+      setAccountBalanceError('Balance cannot be empty');
+      return;
+    }
+    
+    const numericBalance = parseFloat(trimmedInput);
+    if (isNaN(numericBalance) || numericBalance < 0) {
+      setAccountBalanceError('Please enter a valid amount (0 or greater)');
+      return;
+    }
+
+    const result = await updateAccountBalance(selectedAccountToEdit.id, numericBalance);
+    if (result.success) {
+      setAccountModalVisible(false);
+    } else {
+      setAccountBalanceError(result.error);
     }
   };
 
@@ -176,16 +213,41 @@ export default function DashboardScreen({ navigation }) {
         </ScrollView>
 
         {/* Wallet / Accounts Balance Row */}
-        <View style={{ paddingHorizontal: SIZES.paddingMedium, marginBottom: 10 }}>
+        <View style={{ paddingHorizontal: SIZES.paddingMedium, marginBottom: 14 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, paddingLeft: 4 }}>
+            <Text style={{ fontSize: 11, color: colors.textSecondary, fontWeight: 'bold', letterSpacing: 0.5 }}>
+              ACCOUNTS & BALANCES
+            </Text>
+            <Text style={{ fontSize: 10, color: colors.primary, fontWeight: '600' }}>
+              Tap any option to edit balance ✏️
+            </Text>
+          </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             {accounts.map((acc) => (
-              <View key={acc.id} style={[styles.accountCard, { backgroundColor: theme === 'light' ? '#fff' : colors.card }]}>
-                <Ionicons name={acc.type === 'Cash' ? 'cash-outline' : acc.type === 'Bank' ? 'card-outline' : 'wallet-outline'} size={18} color={colors.primary} />
-                <View style={{ marginLeft: 8 }}>
+              <Pressable
+                key={acc.id}
+                style={({ pressed }) => [
+                  styles.accountCard,
+                  { backgroundColor: theme === 'light' ? '#fff' : colors.card },
+                  pressed && { opacity: 0.8, transform: [{ scale: 0.98 }] }
+                ]}
+                onPress={() => handleOpenAccountEdit(acc)}
+              >
+                <View style={[styles.statsIconCircle, { width: 32, height: 32, borderRadius: 16, marginBottom: 0, backgroundColor: theme === 'light' ? '#e0e7ff' : '#1e293b' }]}>
+                  <Ionicons 
+                    name={acc.type === 'Cash' ? 'cash-outline' : acc.type === 'Bank' ? 'business-outline' : 'card-outline'} 
+                    size={16} 
+                    color={colors.primary} 
+                  />
+                </View>
+                <View style={{ marginLeft: 8, marginRight: 6 }}>
                   <Text style={{ fontSize: 10, color: colors.textSecondary, fontWeight: 'bold' }}>{acc.name}</Text>
                   <Text style={{ fontSize: 13, fontWeight: 'bold', color: colors.text }}>{formatCurrency(acc.balance, currency)}</Text>
                 </View>
-              </View>
+                <View style={{ backgroundColor: colors.background, padding: 3, borderRadius: 8, borderWidth: 1, borderColor: colors.border }}>
+                  <Ionicons name="pencil" size={10} color={colors.primary} />
+                </View>
+              </Pressable>
             ))}
           </ScrollView>
         </View>
@@ -442,6 +504,58 @@ export default function DashboardScreen({ navigation }) {
                 onPress={handleUpdateBudgetSubmit}
               >
                 <Text style={styles.modalSaveText}>Save Limit</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Edit Account Balance Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={accountModalVisible}
+        onRequestClose={() => setAccountModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContentCard}>
+            <Text style={styles.modalTitle}>Edit {selectedAccountToEdit?.name}</Text>
+            <Text style={styles.modalSubtitle}>
+              Update available balance for {selectedAccountToEdit?.name}.
+            </Text>
+            
+            <View style={styles.modalInputWrapper}>
+              <Text style={styles.modalCurrencySymbol}>{formatCurrency(0, currency).replace('0', '')}</Text>
+              <TextInput
+                style={[styles.modalInput, accountBalanceError && styles.modalInputError]}
+                placeholder="0.00"
+                keyboardType="decimal-pad"
+                value={newAccountBalanceInput}
+                onChangeText={(val) => {
+                  setNewAccountBalanceInput(val);
+                  if (accountBalanceError) setAccountBalanceError('');
+                }}
+                autoFocus
+              />
+            </View>
+
+            {accountBalanceError ? (
+              <Text style={styles.modalErrorText}>{accountBalanceError}</Text>
+            ) : null}
+
+            <View style={styles.modalActionsRow}>
+              <Pressable
+                style={styles.modalCancelButton}
+                onPress={() => setAccountModalVisible(false)}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </Pressable>
+              
+              <Pressable
+                style={styles.modalSaveButton}
+                onPress={handleUpdateAccountBalanceSubmit}
+              >
+                <Text style={styles.modalSaveText}>Save Balance</Text>
               </Pressable>
             </View>
           </View>

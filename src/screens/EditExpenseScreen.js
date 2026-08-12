@@ -18,7 +18,7 @@ export default function EditExpenseScreen({ route, navigation }) {
   // Extract expense data passed through navigation params
   const { expense } = route.params || {};
 
-  const { editExpense, theme, currency, allCategories } = useContext(AppContext);
+  const { editExpense, theme, currency, allCategories, accounts } = useContext(AppContext);
   const colors = COLORS[theme];
   const styles = getStyles(theme);
 
@@ -36,6 +36,7 @@ export default function EditExpenseScreen({ route, navigation }) {
   const [selectedSubcategory, setSelectedSubcategory] = useState(expense ? expense.subcategory : null);
   const [description, setDescription] = useState(expense ? expense.description : '');
   const [paymentMethod, setPaymentMethod] = useState(expense ? expense.paymentMethod : 'UPI');
+  const [selectedAccount, setSelectedAccount] = useState(expense ? (expense.accountId || 'acc-cash') : 'acc-cash');
   const [notes, setNotes] = useState(expense ? expense.notes : '');
 
   // Errors for input validation
@@ -49,6 +50,7 @@ export default function EditExpenseScreen({ route, navigation }) {
       setSelectedSubcategory(expense.subcategory);
       setDescription(expense.description);
       setPaymentMethod(expense.paymentMethod);
+      setSelectedAccount(expense.accountId || 'acc-cash');
       setNotes(expense.notes || '');
     }
   }, [expense]);
@@ -91,6 +93,7 @@ export default function EditExpenseScreen({ route, navigation }) {
       subcategory: selectedSubcategory,
       description: description.trim() || selectedSubcategory || selectedCategory,
       paymentMethod,
+      accountId: selectedAccount,
       notes: notes.trim(),
       year: expense.year,
       month: expense.month,
@@ -219,10 +222,47 @@ export default function EditExpenseScreen({ route, navigation }) {
                     styles.pill,
                     isSelected && styles.pillSelected,
                   ]}
-                  onPress={() => setPaymentMethod(method)}
+                  onPress={() => {
+                    setPaymentMethod(method);
+                    const pm = method.toLowerCase();
+                    if (pm.includes('credit')) setSelectedAccount('acc-card');
+                    else if (pm.includes('bank') || pm.includes('upi') || pm.includes('debit')) setSelectedAccount('acc-bank');
+                    else setSelectedAccount('acc-cash');
+                  }}
                 >
                   <Text style={[styles.pillText, isSelected && styles.pillTextSelected]}>
                     {method}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+
+        {/* Deduct From Account Selector */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Deduct Money From (Account) *</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
+            {accounts.map((acc) => {
+              const isSelected = selectedAccount === acc.id;
+              return (
+                <Pressable
+                  key={acc.id}
+                  style={[
+                    styles.pill,
+                    isSelected && styles.pillSelected,
+                    { flexDirection: 'row', alignItems: 'center' }
+                  ]}
+                  onPress={() => setSelectedAccount(acc.id)}
+                >
+                  <Ionicons 
+                    name={acc.type === 'Cash' ? 'cash-outline' : acc.type === 'Bank' ? 'business-outline' : 'card-outline'} 
+                    size={14} 
+                    color={isSelected ? '#fff' : colors.text} 
+                    style={{ marginRight: 5 }}
+                  />
+                  <Text style={[styles.pillText, isSelected && styles.pillTextSelected]}>
+                    {acc.name} ({formatCurrency(acc.balance, currency)})
                   </Text>
                 </Pressable>
               );

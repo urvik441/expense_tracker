@@ -19,7 +19,7 @@ export default function BillSplitScreen({ navigation }) {
   const styles = getStyles(theme);
 
   const [billAmount, setBillAmount] = useState('');
-  const [tipPct, setTipPct] = useState(10);
+  const [tipPct, setTipPct] = useState(0);
   const [peopleCount, setPeopleCount] = useState(3);
   const [noteInput, setNoteInput] = useState('');
 

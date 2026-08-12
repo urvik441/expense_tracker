@@ -329,15 +329,51 @@ export function AppProvider({ children }) {
   };
 
   /**
-   * Add a new expense.
+   * Helper to map payment method to account ID if account ID is not explicitly provided.
+   */
+  const getAccountIdFromPaymentMethod = (paymentMethod) => {
+    if (!paymentMethod) return 'acc-cash';
+    const pm = paymentMethod.toLowerCase();
+    if (pm.includes('credit')) return 'acc-card';
+    if (pm.includes('bank') || pm.includes('upi') || pm.includes('debit')) return 'acc-bank';
+    return 'acc-cash';
+  };
+
+  /**
+   * Update the balance for a specific account (Cash Wallet, Bank Account, Credit Card).
+   */
+  const updateAccountBalance = async (accountId, newBalance) => {
+    try {
+      const balanceVal = parseFloat(newBalance);
+      if (isNaN(balanceVal) || balanceVal < 0) {
+        return { success: false, error: 'Please enter a valid non-negative amount' };
+      }
+      const updatedAccounts = accounts.map((acc) => {
+        if (acc.id === accountId) {
+          return { ...acc, balance: balanceVal };
+        }
+        return acc;
+      });
+      setAccounts(updatedAccounts);
+      await AsyncStorage.setItem('@expenses_tracker_accounts', JSON.stringify(updatedAccounts));
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to update account balance:', error);
+      return { success: false, error: 'Failed to update account balance' };
+    }
+  };
+
+  /**
+   * Add a new expense and deduct from the corresponding account balance.
    */
   const addExpense = async (expenseData) => {
     try {
+      const targetAccountId = expenseData.accountId || getAccountIdFromPaymentMethod(expenseData.paymentMethod);
       const newExpense = {
         id: Date.now().toString(),
         tags: expenseData.tags || [],
         receiptNote: expenseData.receiptNote || '',
-        accountId: expenseData.accountId || 'acc-cash',
+        accountId: targetAccountId,
         ...expenseData,
         createdAt: new Date().toISOString(),
       };
@@ -346,11 +382,12 @@ export function AppProvider({ children }) {
       setExpenses(updatedExpenses);
       await saveExpenses(updatedExpenses);
 
-      // Deduct from account balance if specified
-      if (expenseData.accountId) {
-        const updatedAccounts = accounts.map(a => {
-          if (a.id === expenseData.accountId) {
-            return { ...a, balance: Math.max(0, a.balance - parseFloat(expenseData.amount)) };
+      // Deduct expense amount from account balance
+      const amountToDeduct = parseFloat(expenseData.amount) || 0;
+      if (targetAccountId && amountToDeduct > 0) {
+        const updatedAccounts = accounts.map((a) => {
+          if (a.id === targetAccountId) {
+            return { ...a, balance: Math.max(0, a.balance - amountToDeduct) };
           }
           return a;
         });
@@ -367,10 +404,11 @@ export function AppProvider({ children }) {
   };
 
   /**
-   * Edit/Update details of an existing expense.
+   * Edit/Update details of an existing expense and adjust account balances accordingly.
    */
   const editExpense = async (id, updatedData) => {
     try {
+      const oldExpense = expenses.find((item) => item.id === id);
       const updatedExpenses = expenses.map((item) => {
         if (item.id === id) {
           return {
@@ -384,6 +422,28 @@ export function AppProvider({ children }) {
 
       setExpenses(updatedExpenses);
       await saveExpenses(updatedExpenses);
+
+      // Adjust account balance (refund old expense amount, deduct new expense amount)
+      if (oldExpense) {
+        const oldAccountId = oldExpense.accountId || getAccountIdFromPaymentMethod(oldExpense.paymentMethod);
+        const newAccountId = updatedData.accountId || (updatedData.paymentMethod ? getAccountIdFromPaymentMethod(updatedData.paymentMethod) : oldAccountId);
+        const oldAmount = parseFloat(oldExpense.amount) || 0;
+        const newAmount = updatedData.amount !== undefined ? parseFloat(updatedData.amount) : oldAmount;
+
+        const updatedAccounts = accounts.map((a) => {
+          let currentBal = a.balance;
+          if (a.id === oldAccountId) {
+            currentBal += oldAmount;
+          }
+          if (a.id === newAccountId) {
+            currentBal -= newAmount;
+          }
+          return { ...a, balance: Math.max(0, currentBal) };
+        });
+        setAccounts(updatedAccounts);
+        await AsyncStorage.setItem('@expenses_tracker_accounts', JSON.stringify(updatedAccounts));
+      }
+
       await scanBudgetAlertThresholds(updatedExpenses, monthlyBudget);
       return true;
     } catch (error) {
@@ -393,13 +453,30 @@ export function AppProvider({ children }) {
   };
 
   /**
-   * Delete an expense by its unique identifier.
+   * Delete an expense and refund the amount back to the corresponding account balance.
    */
   const deleteExpense = async (id) => {
     try {
+      const expenseToDelete = expenses.find((item) => item.id === id);
       const updatedExpenses = expenses.filter((item) => item.id !== id);
       setExpenses(updatedExpenses);
       await saveExpenses(updatedExpenses);
+
+      if (expenseToDelete) {
+        const targetAccountId = expenseToDelete.accountId || getAccountIdFromPaymentMethod(expenseToDelete.paymentMethod);
+        const amountToRefund = parseFloat(expenseToDelete.amount) || 0;
+        if (targetAccountId && amountToRefund > 0) {
+          const updatedAccounts = accounts.map((a) => {
+            if (a.id === targetAccountId) {
+              return { ...a, balance: a.balance + amountToRefund };
+            }
+            return a;
+          });
+          setAccounts(updatedAccounts);
+          await AsyncStorage.setItem('@expenses_tracker_accounts', JSON.stringify(updatedAccounts));
+        }
+      }
+
       await scanBudgetAlertThresholds(updatedExpenses, monthlyBudget);
       return true;
     } catch (error) {
@@ -793,6 +870,7 @@ export function AppProvider({ children }) {
         convertWishlistToExpense,
         deleteWishlistItem,
         accounts,
+        updateAccountBalance,
         appPin,
         isPinEnabled,
         isAppLocked,
